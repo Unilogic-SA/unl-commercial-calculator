@@ -34,7 +34,7 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
     const today = new Date();
     const dateStr = today.toLocaleDateString('en-ZA');
 
-    let text = `**Quote Date:** ${dateStr}\n\n`;
+    let text = `Quote Date: ${dateStr}\n\n`;
 
     validItems.forEach((item) => {
       const markup = getMarkupPercentage(item.costPrice);
@@ -42,7 +42,7 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
       const unitPrice = calculateUnitPrice(item.costPrice);
       const lineTotal = calculateLineTotal(unitPrice, item.quantity);
 
-      text += `**${item.itemName}**\n`;
+      text += `${item.itemName}\n`;
       text += `• Cost Price: ${formatRands(item.costPrice)}\n`;
       text += `• Markup: ${markup}% (${tier})\n`;
       text += `• Unit Price: ${formatRands(unitPrice)}\n`;
@@ -50,7 +50,7 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
       text += `• Line Total: ${formatRands(lineTotal)}\n\n`;
     });
 
-    text += `**Grand Total: ${formatRands(grandTotal)}**`;
+    text += `Grand Total: ${formatRands(grandTotal)}`;
 
     return text;
   };
