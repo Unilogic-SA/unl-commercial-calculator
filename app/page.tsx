@@ -58,11 +58,8 @@ export default function Home() {
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-balance text-4xl font-bold text-foreground">
-            UNL Quoting Calculator
+            UNL Pricing Calculator
           </h1>
-          <p className="mt-2 text-muted-foreground">
-            Enter line items and generate quoted prices in seconds
-          </p>
         </div>
 
         {/* Main Grid */}
