@@ -70,11 +70,11 @@ export function SecondaryOutput({
     return (
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-foreground">ClickUp Export</CardTitle>
+          <CardTitle className="text-foreground">Text Export</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Enter line items to generate ClickUp export
+            Enter line items to generate text export
           </p>
         </CardContent>
       </Card>
@@ -84,7 +84,7 @@ export function SecondaryOutput({
   return (
     <Card className="border-border">
       <CardHeader>
-        <CardTitle className="text-foreground">ClickUp Export</CardTitle>
+        <CardTitle className="text-foreground">Text Export</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <p className="text-xs text-muted-foreground">
