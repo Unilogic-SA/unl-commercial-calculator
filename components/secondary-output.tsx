@@ -1,6 +1,6 @@
 'use client';
 
-import { LineItem } from '@/app/page';
+import type { LineItem } from '@/app/page';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Copy, Check } from 'lucide-react';
@@ -15,9 +15,13 @@ import { useState } from 'react';
 
 interface SecondaryOutputProps {
   lineItems: LineItem[];
+  quoteReference: string;
 }
 
-export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
+export function SecondaryOutput({
+  lineItems,
+  quoteReference,
+}: SecondaryOutputProps) {
   const [copied, setCopied] = useState(false);
 
   const validItems = lineItems.filter(
@@ -26,15 +30,16 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
 
   const grandTotal = validItems.reduce((sum, item) => {
     const unitPrice = calculateUnitPrice(item.costPrice);
-    const lineTotal = calculateLineTotal(unitPrice, item.quantity);
-    return sum + lineTotal;
+    return sum + calculateLineTotal(unitPrice, item.quantity);
   }, 0);
 
   const generateClickUpText = () => {
-    const today = new Date();
-    const dateStr = today.toLocaleDateString('en-ZA');
-
-    let text = `Quote Date: ${dateStr}\n\n`;
+    const dateStr = new Date().toLocaleDateString('en-ZA');
+    let text = `Quote Date: ${dateStr}\n`;
+    if (quoteReference.trim()) {
+      text += `Client / Quote Reference: ${quoteReference.trim()}\n`;
+    }
+    text += '\n';
 
     validItems.forEach((item) => {
       const markup = getMarkupPercentage(item.costPrice);
@@ -50,17 +55,15 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
       text += `• Line Total: ${formatRands(lineTotal)}\n\n`;
     });
 
-    text += `Grand Total: ${formatRands(grandTotal)}`;
-
-    return text;
+    return `${text}Grand Total: ${formatRands(grandTotal)}`;
   };
 
   const clickUpText = generateClickUpText();
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(clickUpText);
+  const copyToClipboard = async () => {
+    await navigator.clipboard.writeText(clickUpText);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
   if (validItems.length === 0) {
@@ -83,32 +86,24 @@ export function SecondaryOutput({ lineItems }: SecondaryOutputProps) {
       <CardHeader>
         <CardTitle className="text-foreground">ClickUp Export</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex flex-col gap-3">
         <p className="text-xs text-muted-foreground">
-          Copy and paste this into ClickUp for detailed breakdown
+          Copy and paste this into ClickUp for a detailed breakdown
         </p>
-
-        {/* Text Display */}
         <div className="rounded-lg border border-border bg-background p-4">
-          <pre className="text-xs leading-relaxed text-foreground overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
             {clickUpText}
           </pre>
         </div>
-
-        {/* Copy Button */}
-        <Button
-          onClick={copyToClipboard}
-          className="w-full bg-foreground text-background hover:bg-foreground/90"
-          size="lg"
-        >
+        <Button onClick={copyToClipboard} className="w-full" size="lg">
           {copied ? (
             <>
-              <Check className="mr-2 h-4 w-4" />
+              <Check data-icon="inline-start" />
               Copied!
             </>
           ) : (
             <>
-              <Copy className="mr-2 h-4 w-4" />
+              <Copy data-icon="inline-start" />
               Copy to Clipboard
             </>
           )}
