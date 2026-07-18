@@ -1,69 +1,148 @@
 'use client';
 
-import type { LineItem } from '@/app/page';
+import { useState } from 'react';
+import type { LineItem, QuoteMetadata, QuoteSettings } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Copy, Check } from 'lucide-react';
 import {
-  calculateUnitPrice,
+  calculateUnitPriceResult,
   calculateLineTotal,
   formatRands,
-  getMarkupPercentage,
-  getMarkupTierDescription,
 } from '@/lib/pricing';
-import { useState } from 'react';
+
+export type ExportFormat = 'concise' | 'detailed' | 'csv' | 'email';
+
+const FORMAT_LABELS: Record<ExportFormat, string> = {
+  concise: 'Concise',
+  detailed: 'Detailed',
+  csv: 'CSV',
+  email: 'Email',
+};
 
 interface SecondaryOutputProps {
   lineItems: LineItem[];
-  quoteReference: string;
+  metadata: QuoteMetadata;
+  settings: QuoteSettings;
 }
 
-export function SecondaryOutput({
-  lineItems,
-  quoteReference,
-}: SecondaryOutputProps) {
+export function SecondaryOutput({ lineItems, metadata, settings }: SecondaryOutputProps) {
   const [copied, setCopied] = useState(false);
+  const [format, setFormat] = useState<ExportFormat>('detailed');
 
   const validItems = lineItems.filter(
     (item) => item.itemName && item.costPrice > 0 && item.quantity > 0
   );
 
-  const grandTotal = validItems.reduce((sum, item) => {
-    const unitPrice = calculateUnitPrice(item.costPrice);
-    return sum + calculateLineTotal(unitPrice, item.quantity);
-  }, 0);
+  const dateStr = new Date().toLocaleDateString('en-ZA');
 
-  const generateClickUpText = () => {
-    const dateStr = new Date().toLocaleDateString('en-ZA');
-    let text = `Quote Date: ${dateStr}\n`;
-    if (quoteReference.trim()) {
-      text += `Client / Quote Reference: ${quoteReference.trim()}\n`;
-    }
-    text += '\n';
-
-    validItems.forEach((item) => {
-      const markup = getMarkupPercentage(item.costPrice);
-      const tier = getMarkupTierDescription(item.costPrice);
-      const unitPrice = calculateUnitPrice(item.costPrice);
-      const lineTotal = calculateLineTotal(unitPrice, item.quantity);
-
-      text += `${item.itemName}\n`;
-      text += `• Cost Price: ${formatRands(item.costPrice)}\n`;
-      text += `• Markup: ${markup}% (${tier})\n`;
-      text += `• Unit Price: ${formatRands(unitPrice)}\n`;
-      text += `• Quantity: ${item.quantity}x\n`;
-      text += `• Line Total: ${formatRands(lineTotal)}\n\n`;
+  const computedItems = validItems.map((item) => {
+    const effectiveDiscount = item.discountPct + settings.quoteLevelDiscountPct;
+    const result = calculateUnitPriceResult(item.costPrice, {
+      tiers: settings.pricingTiers,
+      overrideMarkupPct: item.overrideMarkupPct,
+      roundingPolicy: settings.roundingPolicy,
+      discountPct: effectiveDiscount,
     });
+    const lineTotal = calculateLineTotal(result.roundedPrice, item.quantity);
+    return { item, result, lineTotal };
+  });
 
-    return `${text}Grand Total: ${formatRands(grandTotal)}`;
+  const grandTotal = computedItems.reduce((s, c) => s + c.lineTotal, 0);
+
+  // ── Format generators ─────────────────────────────────────────────────────
+
+  const metaBlock = () => {
+    const lines: string[] = [`Quote Date: ${dateStr}`];
+    if (metadata.clientName) lines.push(`Client: ${metadata.clientName}`);
+    if (metadata.salesperson) lines.push(`Salesperson: ${metadata.salesperson}`);
+    if (metadata.rfqNumber) lines.push(`RFQ: ${metadata.rfqNumber}`);
+    if (metadata.quoteReference) lines.push(`Reference: ${metadata.quoteReference}`);
+    if (metadata.validityDays) lines.push(`Valid for: ${metadata.validityDays} days`);
+    return lines.join('\n');
   };
 
-  const clickUpText = generateClickUpText();
+  const generateConcise = () => {
+    const lines = [metaBlock(), ''];
+    computedItems.forEach(({ item, result, lineTotal }) => {
+      lines.push(`${item.itemName}`);
+      lines.push(`  ${formatRands(result.roundedPrice)} x ${item.quantity} = ${formatRands(lineTotal)}`);
+    });
+    lines.push('', `Grand Total: ${formatRands(grandTotal)}`);
+    return lines.join('\n');
+  };
+
+  const generateDetailed = () => {
+    const lines = [metaBlock(), ''];
+    computedItems.forEach(({ item, result, lineTotal }) => {
+      lines.push(item.itemName);
+      lines.push(`• Cost Price: ${formatRands(item.costPrice)}`);
+      lines.push(`• Markup: ${result.markupPct}% (${result.tierLabel})${result.isOverridden ? ' [override]' : ''}`);
+      if (item.discountPct > 0 || settings.quoteLevelDiscountPct > 0) {
+        lines.push(`• Discount: ${item.discountPct + settings.quoteLevelDiscountPct}%`);
+      }
+      lines.push(`• Unit Price: ${formatRands(result.roundedPrice)}`);
+      lines.push(`• Quantity: ${item.quantity}x`);
+      lines.push(`• Line Total: ${formatRands(lineTotal)}`);
+      lines.push(`• Gross Profit: ${formatRands(result.grossProfit * item.quantity)} | Margin: ${result.marginPct.toFixed(1)}%`);
+      lines.push('');
+    });
+    lines.push(`Grand Total: ${formatRands(grandTotal)}`);
+    if (metadata.notes) lines.push('', `Notes: ${metadata.notes}`);
+    return lines.join('\n');
+  };
+
+  const generateCSV = () => {
+    const rows = [
+      ['Item Name', 'Cost Price', 'Markup %', 'Unit Price', 'Quantity', 'Line Total', 'Gross Profit', 'Margin %'].join(','),
+    ];
+    computedItems.forEach(({ item, result, lineTotal }) => {
+      rows.push([
+        `"${item.itemName.replace(/"/g, '""')}"`,
+        item.costPrice,
+        result.markupPct,
+        result.roundedPrice,
+        item.quantity,
+        lineTotal,
+        (result.grossProfit * item.quantity).toFixed(0),
+        result.marginPct.toFixed(2),
+      ].join(','));
+    });
+    rows.push(['', '', '', '', 'Grand Total', grandTotal, '', ''].join(','));
+    return rows.join('\n');
+  };
+
+  const generateEmail = () => {
+    const validity = metadata.validityDays ? ` This quotation is valid for ${metadata.validityDays} days.` : '';
+    const ref = metadata.quoteReference ? ` (Ref: ${metadata.quoteReference})` : '';
+    const client = metadata.clientName ? ` for ${metadata.clientName}` : '';
+    const lines = [
+      `Please find our quotation${client}${ref} dated ${dateStr}.${validity}`,
+      '',
+    ];
+    computedItems.forEach(({ item, result, lineTotal }) => {
+      lines.push(`${item.itemName}`);
+      lines.push(`  Unit Price: ${formatRands(result.roundedPrice)}   Qty: ${item.quantity}   Total: ${formatRands(lineTotal)}`);
+    });
+    lines.push('', `Grand Total: ${formatRands(grandTotal)}`);
+    if (metadata.notes) lines.push('', metadata.notes);
+    lines.push('', 'All prices exclude VAT unless otherwise stated.');
+    return lines.join('\n');
+  };
+
+  const exportText = (() => {
+    switch (format) {
+      case 'concise': return generateConcise();
+      case 'detailed': return generateDetailed();
+      case 'csv': return generateCSV();
+      case 'email': return generateEmail();
+    }
+  })();
 
   const copyToClipboard = async () => {
-    await navigator.clipboard.writeText(clickUpText);
+    await navigator.clipboard.writeText(exportText);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (validItems.length === 0) {
@@ -74,7 +153,7 @@ export function SecondaryOutput({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Enter line items to generate text export
+            Enter line items to generate a text export
           </p>
         </CardContent>
       </Card>
@@ -87,25 +166,31 @@ export function SecondaryOutput({
         <CardTitle className="text-foreground">Text Export</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <p className="text-xs text-muted-foreground">
-          Copy and paste this into ClickUp for a detailed breakdown
-        </p>
+        {/* Format selector */}
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Export format">
+          {(Object.keys(FORMAT_LABELS) as ExportFormat[]).map((f) => (
+            <Button
+              key={f}
+              variant={format === f ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFormat(f)}
+            >
+              {FORMAT_LABELS[f]}
+            </Button>
+          ))}
+        </div>
+
         <div className="rounded-lg border border-border bg-background p-4">
-          <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
-            {clickUpText}
+          <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
+            {exportText}
           </pre>
         </div>
+
         <Button onClick={copyToClipboard} className="w-full" size="lg">
           {copied ? (
-            <>
-              <Check data-icon="inline-start" />
-              Copied!
-            </>
+            <><Check data-icon="inline-start" />Copied!</>
           ) : (
-            <>
-              <Copy data-icon="inline-start" />
-              Copy to Clipboard
-            </>
+            <><Copy data-icon="inline-start" />Copy to Clipboard</>
           )}
         </Button>
       </CardContent>
